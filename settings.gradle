@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MapLibreDemo"
-include(":app")
+rootProject.name = "MapLibre Demo app"
+include(':appRegular')
