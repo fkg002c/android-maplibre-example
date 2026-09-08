@@ -6,8 +6,6 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.os.Bundle
 import android.os.Looper
 import android.view.View
@@ -17,12 +15,24 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import org.maplibre.android.MapLibre
 import org.maplibre.android.annotations.IconFactory
+import org.maplibre.android.annotations.Marker
 import org.maplibre.android.annotations.MarkerOptions
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.location.engine.LocationEngine
+import org.maplibre.android.location.engine.LocationEngineCallback
+import org.maplibre.android.location.engine.LocationEngineDefault
+import org.maplibre.android.location.engine.LocationEngineRequest
+import org.maplibre.android.location.engine.LocationEngineResult
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import kotlin.math.cos
+import kotlin.math.PI
 
 class MainActivity : AppCompatActivity() {
 
@@ -30,8 +40,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private var maplibreMap: MapLibreMap? = null
 
-    private val locationManager by lazy {
-        getSystemService(LOCATION_SERVICE) as LocationManager
+    private lateinit var locationEngine: LocationEngine
+    private var hasCenteredCamera = false
+    private var currentLocationMarker: Marker? = null
+    private var accuracySource: GeoJsonSource? = null
+
+    private val locationCallback = object : LocationEngineCallback<LocationEngineResult> {
+        override fun onSuccess(result: LocationEngineResult) {
+            result.lastLocation?.let { onLocationUpdate(it) }
+        }
+
+        override fun onFailure(exception: Exception) {
+            if (!hasCenteredCamera) {
+                statusText.text = getString(R.string.location_permission_denied)
+                showOnMap(FALLBACK_LOCATION)
+            }
+        }
     }
 
     private val requestPermissions = registerForActivityResult(
@@ -40,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
-            fetchLocation()
+            startLocationUpdates()
         } else {
             statusText.text = getString(R.string.location_permission_denied)
             showOnMap(FALLBACK_LOCATION)
@@ -58,10 +82,28 @@ class MainActivity : AppCompatActivity() {
 
         mapView.getMapAsync { map ->
             maplibreMap = map
-            map.setStyle(Style.Builder().fromUri(DEMO_STYLE_URL)) {
+            map.setStyle(Style.Builder().fromUri(DEMO_STYLE_URL)) { style ->
+                addAccuracyCircleLayer(style)
                 requestLocationPermissionsAndFetch()
             }
         }
+    }
+
+    private fun addAccuracyCircleLayer(style: Style) {
+        val source = GeoJsonSource(ACCURACY_SOURCE_ID, EMPTY_POINT_GEOJSON)
+        accuracySource = source
+        style.addSource(source)
+
+        val layer = CircleLayer(ACCURACY_LAYER_ID, ACCURACY_SOURCE_ID).apply {
+            setProperties(
+                PropertyFactory.circleColor(ContextCompat.getColor(this@MainActivity, R.color.location_blue)),
+                PropertyFactory.circleOpacity(0.3f),
+                PropertyFactory.circleStrokeColor(ContextCompat.getColor(this@MainActivity, R.color.location_blue)),
+                PropertyFactory.circleStrokeWidth(1f),
+                PropertyFactory.circleStrokeOpacity(1f)
+            )
+        }
+        style.addLayer(layer)
     }
 
     private fun requestLocationPermissionsAndFetch() {
@@ -73,7 +115,7 @@ class MainActivity : AppCompatActivity() {
         ) == PackageManager.PERMISSION_GRANTED
 
         if (fineGranted || coarseGranted) {
-            fetchLocation()
+            startLocationUpdates()
         } else {
             requestPermissions.launch(
                 arrayOf(
@@ -85,42 +127,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun fetchLocation() {
+    private fun startLocationUpdates() {
         statusText.text = getString(R.string.locating)
 
-        val lastKnown = locationManager.getProviders(true)
-            .mapNotNull { locationManager.getLastKnownLocation(it) }
-            .maxByOrNull { it.time }
+        locationEngine = LocationEngineDefault.getDefaultLocationEngine(this)
+        locationEngine.getLastLocation(locationCallback)
 
-        if (lastKnown != null) {
-            onLocationReady(lastKnown)
-            return
-        }
-
-        val provider = when {
-            locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-            else -> null
-        }
-
-        if (provider == null) {
-            statusText.text = getString(R.string.location_permission_denied)
-            showOnMap(FALLBACK_LOCATION)
-            return
-        }
-
-        val listener = object : LocationListener {
-            override fun onLocationChanged(location: Location) {
-                locationManager.removeUpdates(this)
-                onLocationReady(location)
-            }
-        }
-        locationManager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper())
+        val request = LocationEngineRequest.Builder(UPDATE_INTERVAL_MS)
+            .setFastestInterval(FASTEST_INTERVAL_MS)
+            .setPriority(LocationEngineRequest.PRIORITY_HIGH_ACCURACY)
+            .build()
+        locationEngine.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
     }
 
-    private fun onLocationReady(location: Location) {
+    private fun onLocationUpdate(location: Location) {
+        val latLng = LatLng(location.latitude, location.longitude)
         statusText.visibility = View.GONE
-        showOnMap(LatLng(location.latitude, location.longitude))
+
+        updateCurrentLocationMarker(latLng)
+        updateAccuracyCircle(latLng, location.accuracy)
+
+        if (!hasCenteredCamera) {
+            hasCenteredCamera = true
+            showOnMap(latLng)
+        }
     }
 
     private fun showOnMap(center: LatLng) {
@@ -129,7 +159,52 @@ class MainActivity : AppCompatActivity() {
         map.style?.let { addPointsOfInterest(map, center) }
     }
 
+    private fun updateCurrentLocationMarker(center: LatLng) {
+        val map = maplibreMap ?: return
+        currentLocationMarker?.let { map.removeMarker(it) }
+        val icon = IconFactory.getInstance(this).fromBitmap(drawableToBitmap(R.drawable.ic_current_location))
+        currentLocationMarker = map.addMarker(
+            MarkerOptions()
+                .position(center)
+                .title("You are here")
+                .icon(icon)
+        )
+    }
+
+    private fun updateAccuracyCircle(center: LatLng, accuracyMeters: Float) {
+        val source = accuracySource ?: return
+        source.setGeoJson(pointGeoJson(center.longitude, center.latitude))
+
+        val layer = maplibreMap?.style?.getLayer(ACCURACY_LAYER_ID) as? CircleLayer ?: return
+        val radiusAtZoom0 = metersToPixelsAtZoom(accuracyMeters.toDouble(), 0.0, center.latitude)
+        val radiusAtZoom20 = metersToPixelsAtZoom(accuracyMeters.toDouble(), 20.0, center.latitude)
+        layer.setProperties(
+            PropertyFactory.circleRadius(
+                Expression.interpolate(
+                    Expression.exponential(2f),
+                    Expression.zoom(),
+                    Expression.stop(0, radiusAtZoom0),
+                    Expression.stop(20, radiusAtZoom20)
+                )
+            )
+        )
+    }
+
+    private fun metersToPixelsAtZoom(meters: Double, zoom: Double, latitude: Double): Double {
+        val metersPerPixel = 156543.03392 * cos(latitude * PI / 180.0) / Math.pow(2.0, zoom)
+        return meters / metersPerPixel
+    }
+
+    private fun pointGeoJson(longitude: Double, latitude: Double): String {
+        return "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[$longitude,$latitude]}}"
+    }
+
+    private var poisAdded = false
+
     private fun addPointsOfInterest(map: MapLibreMap, center: LatLng) {
+        if (poisAdded) return
+        poisAdded = true
+
         val offset = 0.02
         val pois = listOf(
             Poi("Cafe", "A nearby cafe", offset, offset, R.drawable.ic_poi_restaurant),
@@ -202,11 +277,22 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (::locationEngine.isInitialized) {
+            locationEngine.removeLocationUpdates(locationCallback)
+        }
         mapView.onDestroy()
     }
 
     companion object {
-        private const val DEMO_STYLE_URL = "https://demotiles.maplibre.org/style.json"
+        private const val DEMO_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
         private val FALLBACK_LOCATION = LatLng(48.8566, 2.3522)
+        private const val ACCURACY_SOURCE_ID = "current-location-accuracy-source"
+        private const val ACCURACY_LAYER_ID = "current-location-accuracy-layer"
+        private const val EMPTY_POINT_GEOJSON =
+            "{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[0,0]}}"
+
+        // Update cadence similar to a typical foreground navigation/maps app.
+        private const val UPDATE_INTERVAL_MS = 2000L
+        private const val FASTEST_INTERVAL_MS = 1000L
     }
 }
