@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">MapLibre Demo (Compose)</string>
+    <string name="app_name">MapLibre Compose</string>
     <string name="location_permission_rationale">Location access is needed to center the map on your current position.</string>
     <string name="location_permission_denied">Location permission denied. Showing default location.</string>
     <string name="locating">Locating you…</string>

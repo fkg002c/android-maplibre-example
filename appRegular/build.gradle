@@ -1,5 +1,21 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+def yandexMapsApiKey = localProperties.getProperty('YANDEX_MAPS_API_KEY')
+if (yandexMapsApiKey == null || yandexMapsApiKey.trim().isEmpty()) {
+    throw new GradleException(
+        "Missing YANDEX_MAPS_API_KEY in local.properties. Get a key for the \"Tiles API\" " +
+        "package at https://yandex.ru/maps-api/docs/tiles-api/quickstart.html, then add " +
+        "YANDEX_MAPS_API_KEY=your_key to local.properties (gitignored, not committed)."
+    )
 }
 
 android {
@@ -10,8 +26,13 @@ android {
         applicationId "com.example.maplibredemo"
         minSdk 24
         targetSdk 37
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "0.2"
+        buildConfigField "String", "YANDEX_MAPS_API_KEY", "\"${yandexMapsApiKey}\""
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     buildTypes {
