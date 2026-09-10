@@ -27,6 +27,7 @@ import org.maplibre.android.location.engine.LocationEngineResult
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.module.http.HttpRequestUtil
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.PropertyFactory
@@ -37,6 +38,8 @@ import org.maplibre.android.style.sources.TileSet
 import kotlin.math.cos
 import kotlin.math.PI
 import androidx.core.graphics.createBitmap
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
 
 class MainActivity : AppCompatActivity() {
 
@@ -78,6 +81,16 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
+        // Yandex's Tiles API rate-limits (HTTP 429) unthrottled request bursts, which is
+        // exactly what MapLibre's default prefetch fires off during the initial camera
+        // animation. A capped per-host concurrency spreads those requests out so fewer get
+        // rejected, while still letting prefetch supply low-res placeholder tiles. This must
+        // come after MapLibre.getInstance() — HttpRequestImpl's static init requires it.
+        HttpRequestUtil.setOkHttpClient(
+            OkHttpClient.Builder()
+                .dispatcher(Dispatcher().apply { maxRequestsPerHost = TILE_MAX_REQUESTS_PER_HOST })
+                .build()
+        )
         setContentView(R.layout.activity_main)
 
         mapView = findViewById(R.id.mapView)
@@ -311,6 +324,7 @@ class MainActivity : AppCompatActivity() {
         private const val YANDEX_SOURCE_ID = "yandex-raster-source"
         private const val YANDEX_LAYER_ID = "yandex-raster-layer"
         private const val YANDEX_TILE_SIZE = 256
+        private const val TILE_MAX_REQUESTS_PER_HOST = 4
         private val FALLBACK_LOCATION = LatLng(48.8566, 2.3522)
         private const val ACCURACY_SOURCE_ID = "current-location-accuracy-source"
         private const val ACCURACY_LAYER_ID = "current-location-accuracy-layer"
