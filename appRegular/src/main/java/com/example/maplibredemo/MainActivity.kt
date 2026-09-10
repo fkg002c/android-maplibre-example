@@ -30,7 +30,10 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.layers.RasterLayer
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.android.style.sources.RasterSource
+import org.maplibre.android.style.sources.TileSet
 import kotlin.math.cos
 import kotlin.math.PI
 import androidx.core.graphics.createBitmap
@@ -83,11 +86,25 @@ class MainActivity : AppCompatActivity() {
 
         mapView.getMapAsync { map ->
             maplibreMap = map
-            map.setStyle(Style.Builder().fromUri(DEMO_STYLE_URL)) { style ->
+            map.setStyle(buildYandexRasterStyle()) { style ->
                 addAccuracyCircleLayer(style)
                 requestLocationPermissionsAndFetch()
             }
         }
+    }
+
+    private fun buildYandexRasterStyle(): Style.Builder {
+        val tileUrl = "$YANDEX_TILE_URL_BASE?l=map&lang=$YANDEX_TILE_LANG" +
+            "&x={x}&y={y}&z={z}&projection=web_mercator&apikey=${BuildConfig.YANDEX_MAPS_API_KEY}"
+        val tileSet = TileSet(TILE_JSON_VERSION, tileUrl).apply {
+            minZoom = 0f
+            maxZoom = 19f
+        }
+        val rasterSource = RasterSource(YANDEX_SOURCE_ID, tileSet, YANDEX_TILE_SIZE)
+        val rasterLayer = RasterLayer(YANDEX_LAYER_ID, YANDEX_SOURCE_ID)
+        return Style.Builder()
+            .withSource(rasterSource)
+            .withLayer(rasterLayer)
     }
 
     private fun addAccuracyCircleLayer(style: Style) {
@@ -285,7 +302,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val DEMO_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
+        // Official Yandex Tiles API: https://yandex.ru/maps-api/docs/tiles-api/quickstart.html
+        // Requires an API key for the "Tiles API" package, supplied via local.properties as
+        // YANDEX_MAPS_API_KEY and exposed here through BuildConfig (see build.gradle).
+        private const val YANDEX_TILE_URL_BASE = "https://tiles.api-maps.yandex.ru/v1/tiles/"
+        private const val YANDEX_TILE_LANG = "en_US"
+        private const val TILE_JSON_VERSION = "2.1.0"
+        private const val YANDEX_SOURCE_ID = "yandex-raster-source"
+        private const val YANDEX_LAYER_ID = "yandex-raster-layer"
+        private const val YANDEX_TILE_SIZE = 256
         private val FALLBACK_LOCATION = LatLng(48.8566, 2.3522)
         private const val ACCURACY_SOURCE_ID = "current-location-accuracy-source"
         private const val ACCURACY_LAYER_ID = "current-location-accuracy-layer"
