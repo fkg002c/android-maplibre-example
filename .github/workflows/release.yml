@@ -28,6 +28,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Debug APKs
+        env:
+          YANDEX_MAPS_API_KEY: ${{ secrets.YANDEX_MAPS_API_KEY }}
         run: ./gradlew assembleDebug
 
       - name: Create Release

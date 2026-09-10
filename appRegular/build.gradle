@@ -7,12 +7,14 @@ def localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withInputStream { localProperties.load(it) }
 }
-def yandexMapsApiKey = localProperties.getProperty('YANDEX_MAPS_API_KEY')
+def yandexMapsApiKey = localProperties.getProperty('YANDEX_MAPS_API_KEY') ?: System.getenv('YANDEX_MAPS_API_KEY')
 if (yandexMapsApiKey == null || yandexMapsApiKey.trim().isEmpty()) {
     throw new GradleException(
-            "Missing YANDEX_MAPS_API_KEY in local.properties. Get a key for the \"Tiles API\" " +
-                    "package at https://yandex.ru/maps-api/docs/tiles-api/quickstart.html, then add " +
-                    "YANDEX_MAPS_API_KEY=your_key to local.properties (gitignored, not committed)."
+            "Missing YANDEX_MAPS_API_KEY. Get a key for the \"Tiles API\" package at " +
+                    "https://yandex.ru/maps-api/docs/tiles-api/quickstart.html, then either add " +
+                    "YANDEX_MAPS_API_KEY=your_key to local.properties (gitignored, not committed) " +
+                    "for local builds, or set a YANDEX_MAPS_API_KEY environment variable (e.g. from a " +
+                    "GitHub Actions secret) for CI builds."
     )
 }
 
@@ -24,8 +26,8 @@ android {
         applicationId "com.example.maplibredemo"
         minSdk 24
         targetSdk 37
-        versionCode 3
-        versionName "0.3"
+        versionCode 6
+        versionName "0.6"
         buildConfigField "String", "YANDEX_MAPS_API_KEY", "\"${yandexMapsApiKey}\""
     }
 
