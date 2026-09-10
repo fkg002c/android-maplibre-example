@@ -85,7 +85,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MapScreen(activity = this)
+                    //MapScreen(activity = this)
+                    MainMapScreen()
                 }
             }
         }
